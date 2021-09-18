@@ -27,8 +27,8 @@ type ShortnerClient interface {
 func New(ctx context.Context, shortnerClient ShortnerClient, router chi.Router) (*Server, error) {
 	s := Server{shortnerClient: shortnerClient}
 	router.Post("/s/generate", s.ShortlinkGenerateHandler)
-	router.Get("/{shortlink}", s.ShortlinkRedirectHandler)
-	router.Get("/u/{uuid}", s.ShortlinkRedirectUuidHandler)
+	router.Get("/{shortlink}", s.ShortlinkRedirectHandler(shortlink.KeyTypeStandard))
+	router.Get("/u/{shortlink}", s.ShortlinkRedirectHandler(shortlink.KeyTypeUuid))
 	router.Get("/cron/checkRedirects", s.CheckRedirectsHandler)
 	return &s, nil
 }
@@ -37,6 +37,7 @@ func (s *Server) ShortlinkGenerateHandler(w http.ResponseWriter, r *http.Request
 	ctx := r.Context()
 	var in shortlink.Input
 
+	defer r.Body.Close()
 	err := json.NewDecoder(r.Body).Decode(&in)
 	if err != nil {
 		fmt.Printf("error decode shortlink: %v\n", err)
@@ -44,7 +45,7 @@ func (s *Server) ShortlinkGenerateHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	err = validateURLs(&in)
+	err = validateURLs(in)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -60,34 +61,21 @@ func (s *Server) ShortlinkGenerateHandler(w http.ResponseWriter, r *http.Request
 	w.Write([]byte(fmt.Sprint(shortLink)))
 }
 
-func (s *Server) ShortlinkRedirectHandler(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	key := chi.URLParam(r, "shortlink")
+func (s *Server) ShortlinkRedirectHandler(keyType shortlink.KeyType) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		key := chi.URLParam(r, "shortlink")
 
-	redirectUrl, err := s.shortnerClient.GetLongURL(ctx, key, time.Now(), shortlink.KeyTypeStandard, true)
-	if err != nil {
-		fmt.Printf("error getting url by key: %v\n", err)
-		http.Error(w, "error getting url", http.StatusInternalServerError)
+		redirectUrl, err := s.shortnerClient.GetLongURL(ctx, key, time.Now(), keyType, true)
+		if err != nil {
+			fmt.Printf("error getting url by uuid: %v\n", err)
+			http.Error(w, "error getting url", http.StatusInternalServerError)
+			return
+		}
+
+		http.Redirect(w, r, redirectUrl, http.StatusFound)
 		return
 	}
-
-	http.Redirect(w, r, redirectUrl, http.StatusFound)
-	return
-}
-
-func (s *Server) ShortlinkRedirectUuidHandler(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	key := chi.URLParam(r, "uuid")
-
-	redirectUrl, err := s.shortnerClient.GetLongURL(ctx, key, time.Now(), shortlink.KeyTypeUuid, true)
-	if err != nil {
-		fmt.Printf("error getting url by uuid: %v\n", err)
-		http.Error(w, "error getting url", http.StatusInternalServerError)
-		return
-	}
-
-	http.Redirect(w, r, redirectUrl, http.StatusFound)
-	return
 }
 
 func (s *Server) CheckRedirectsHandler(w http.ResponseWriter, r *http.Request) {
@@ -189,7 +177,7 @@ func backgroundTask(ctx context.Context, total int, done *uint64) {
 	}()
 }
 
-func validateURLs(in *shortlink.Input) error {
+func validateURLs(in shortlink.Input) error {
 	for i, r := range in.Redirects {
 		if r.URL == "" {
 			return fmt.Errorf("url not provided at index %d", i)
