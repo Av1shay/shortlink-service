@@ -62,10 +62,9 @@ func (s *Server) ShortlinkGenerateHandler(w http.ResponseWriter, r *http.Request
 
 func (s *Server) ShortlinkRedirectHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	reqTime := time.Now()
 	key := chi.URLParam(r, "shortlink")
 
-	redirectUrl, err := s.shortnerClient.GetLongURL(ctx, key, reqTime, shortlink.KeyTypeStandard, true)
+	redirectUrl, err := s.shortnerClient.GetLongURL(ctx, key, time.Now(), shortlink.KeyTypeStandard, true)
 	if err != nil {
 		fmt.Printf("error getting url by key: %v\n", err)
 		http.Error(w, "error getting url", http.StatusInternalServerError)
@@ -78,10 +77,9 @@ func (s *Server) ShortlinkRedirectHandler(w http.ResponseWriter, r *http.Request
 
 func (s *Server) ShortlinkRedirectUuidHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	reqTime := time.Now()
 	key := chi.URLParam(r, "uuid")
 
-	redirectUrl, err := s.shortnerClient.GetLongURL(ctx, key, reqTime, shortlink.KeyTypeUuid, true)
+	redirectUrl, err := s.shortnerClient.GetLongURL(ctx, key, time.Now(), shortlink.KeyTypeUuid, true)
 	if err != nil {
 		fmt.Printf("error getting url by uuid: %v\n", err)
 		http.Error(w, "error getting url", http.StatusInternalServerError)

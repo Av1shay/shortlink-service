@@ -30,10 +30,13 @@ func main() {
 	}
 
 	dbClient, err := dbmongo.New(ctx, dbmongo.Config{
-		Uri:            os.Getenv("MONGO_URI"),
-		DbName:         os.Getenv("MONGO_DB"),
-		CollectionName: os.Getenv("MONGO_COLLECTION"),
+		URI:           os.Getenv("MONGO_URI"),
+		DbName:        os.Getenv("MONGO_DB"),
+		ItemsCollName: os.Getenv("MONGO_COLLECTION"),
 	})
+	if err != nil {
+		log.Fatalf("Error create db client: %v", err)
+	}
 
 	shortnerClient, err := shortner.New(ctx, os.Getenv("SHORTLINK_BASE_URL"), dbClient)
 	if err != nil {

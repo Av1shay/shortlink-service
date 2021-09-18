@@ -8,7 +8,6 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/readpref"
 	"shortlink-service/shortlink"
 	"strconv"
-	"sync"
 )
 
 type DocState int
@@ -19,19 +18,19 @@ const (
 )
 
 type Config struct {
-	Uri            string
-	DbName         string
-	CollectionName string
+	URI           string
+	DbName        string
+	ItemsCollName string
 }
 
 type Client struct {
-	mu         sync.Mutex
-	mClient    *mongo.Client
-	collection *mongo.Collection
+	mongoClient *mongo.Client
+	items       *mongo.Collection
+	counters    *mongo.Collection
 }
 
 func New(ctx context.Context, config Config) (*Client, error) {
-	mongoClient, err := mongo.Connect(ctx, options.Client().ApplyURI(config.Uri))
+	mongoClient, err := mongo.Connect(ctx, options.Client().ApplyURI(config.URI))
 	if err != nil {
 		return nil, err
 	}
@@ -40,8 +39,9 @@ func New(ctx context.Context, config Config) (*Client, error) {
 		return nil, err
 	}
 	c := Client{
-		mClient:    mongoClient,
-		collection: mongoClient.Database(config.DbName).Collection(config.CollectionName),
+		mongoClient: mongoClient,
+		items:       mongoClient.Database(config.DbName).Collection(config.ItemsCollName),
+		counters:    mongoClient.Database(config.DbName).Collection("counters"),
 	}
 	return &c, nil
 }
@@ -49,7 +49,7 @@ func New(ctx context.Context, config Config) (*Client, error) {
 func (c *Client) Get(ctx context.Context, key string) (*shortlink.Item, error) {
 	var res shortlink.Item
 	filter := bson.D{{"key", key}}
-	err := c.collection.FindOne(ctx, filter).Decode(&res)
+	err := c.items.FindOne(ctx, filter).Decode(&res)
 	if err != nil {
 		return nil, err
 	}
@@ -57,7 +57,12 @@ func (c *Client) Get(ctx context.Context, key string) (*shortlink.Item, error) {
 }
 
 func (c *Client) Set(ctx context.Context, key string, data *shortlink.Item) error {
-	_, err := c.collection.InsertOne(ctx, bson.D{
+	id, err := c.getNextSeq(ctx, "shortlinkId")
+	if err != nil {
+		return err
+	}
+	_, err = c.items.InsertOne(ctx, bson.D{
+		{"_id", id},
 		{"key", key},
 		{"redirects", data.Redirects},
 		{"visits", data.Visits},
@@ -70,16 +75,13 @@ func (c *Client) Set(ctx context.Context, key string, data *shortlink.Item) erro
 }
 
 func (c *Client) CreateGetID(ctx context.Context, data *shortlink.Item) (uint64, error) {
-	c.mu.Lock()
-	count, err := c.collection.CountDocuments(ctx, bson.D{})
+	id, err := c.getNextSeq(ctx, "shortlinkId")
 	if err != nil {
-		c.mu.Unlock()
 		return 0, err
 	}
-	key := count + 1
-	c.mu.Unlock()
-	_, err = c.collection.InsertOne(ctx, bson.D{
-		{"key", strconv.FormatInt(key, 10)},
+	_, err = c.items.InsertOne(ctx, bson.D{
+		{"_id", id},
+		{"key", strconv.FormatUint(id, 10)},
 		{"redirects", data.Redirects},
 		{"visits", data.Visits},
 		{"state", docStateActive},
@@ -87,13 +89,13 @@ func (c *Client) CreateGetID(ctx context.Context, data *shortlink.Item) (uint64,
 	if err != nil {
 		return 0, err
 	}
-	return uint64(key), nil
+	return id, nil
 }
 
 func (c *Client) Delete(ctx context.Context, key string) error {
 	filter := bson.D{{"key", key}}
 	update := bson.D{{"$set", bson.D{{"state", docStateSoftDelete}}}}
-	_, err := c.collection.UpdateOne(ctx, filter, update)
+	_, err := c.items.UpdateOne(ctx, filter, update)
 	if err != nil {
 		return err
 	}
@@ -103,7 +105,7 @@ func (c *Client) Delete(ctx context.Context, key string) error {
 func (c *Client) IncVisits(ctx context.Context, key string) error {
 	filter := bson.D{{"key", key}}
 	update := bson.D{{"$inc", bson.D{{"visits", 1}}}}
-	_, err := c.collection.UpdateOne(ctx, filter, update)
+	_, err := c.items.UpdateOne(ctx, filter, update)
 	if err != nil {
 		return err
 	}
@@ -120,7 +122,7 @@ func (c *Client) GetVisits(ctx context.Context, key string) (int, error) {
 
 func (c *Client) AsArray(ctx context.Context) ([]*shortlink.Item, error) {
 	var items []*shortlink.Item
-	cur, err := c.collection.Find(ctx, bson.D{{"state", docStateActive}})
+	cur, err := c.items.Find(ctx, bson.D{{"state", docStateActive}})
 	if err != nil {
 		return nil, err
 	}
@@ -142,8 +144,23 @@ func (c *Client) AsArray(ctx context.Context) ([]*shortlink.Item, error) {
 }
 
 func (c *Client) Disconnect(ctx context.Context) error {
-	if err := c.mClient.Disconnect(ctx); err != nil {
+	if err := c.mongoClient.Disconnect(ctx); err != nil {
 		return err
 	}
 	return nil
+}
+
+func (c *Client) getNextSeq(ctx context.Context, name string) (uint64, error) {
+	var res struct {
+		Seq uint64
+	}
+	filter := bson.D{{"_id", name}}
+	update := bson.D{{"$inc", bson.D{{"seq", 1}}}}
+	err := c.counters.FindOneAndUpdate(ctx, filter, update, options.FindOneAndUpdate().
+		SetReturnDocument(options.After)).
+		Decode(&res)
+	if err != nil {
+		return 0, err
+	}
+	return res.Seq, nil
 }

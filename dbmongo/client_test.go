@@ -12,9 +12,9 @@ func TestClient(t *testing.T) {
 	ctx := context.Background()
 
 	conf := Config{
-		Uri:            "mongodb://username:password@localhost:26000",
-		DbName:         "db",
-		CollectionName: "shortlinks",
+		URI:           "mongodb://username:password@localhost:26000",
+		DbName:        "db",
+		ItemsCollName: "shortlinks",
 	}
 	c, err := New(ctx, conf)
 	if err != nil {
@@ -44,7 +44,7 @@ func TestClient(t *testing.T) {
 	if err != nil {
 		t.Fatalf("error creating key: %v", err)
 	}
-	visKey :=strconv.FormatUint(visKeyId, 10)
+	visKey := strconv.FormatUint(visKeyId, 10)
 	for i := 0; i < visCount; i++ {
 		go func(k string) {
 			err = c.IncVisits(ctx, k)

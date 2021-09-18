@@ -23,7 +23,7 @@ func TestClient(t *testing.T) {
 	}
 
 	t.Log("Testing key concurrent increments...")
-	count := 10000
+	count := 100000
 	for i := 0; i < count; i++ {
 		go func(item *shortlink.Item) {
 			_, err := c.CreateGetID(ctx, item)
@@ -54,7 +54,7 @@ func TestClient(t *testing.T) {
 	t.Logf("last item: from (%d) to (%d) redirectURL (%s)", firstRedirect.From, firstRedirect.To, firstRedirect.URL)
 
 	t.Log("Testing visits...")
-	visCount := 1005
+	visCount := 100007
 	visKeyId, err := c.CreateGetID(ctx, &shortlinkItem)
 	if err != nil {
 		t.Fatalf("error creating key: %v", err)
