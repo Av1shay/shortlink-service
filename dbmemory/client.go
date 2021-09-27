@@ -11,7 +11,7 @@ import (
 
 type Client struct {
 	lastKeyID uint64
-	mu        sync.Mutex
+	sync.Mutex
 	storage   map[string]*shortlink.Item
 }
 
@@ -38,11 +38,11 @@ func (c *Client) Set(ctx context.Context, key string, data *shortlink.Item) erro
 }
 
 func (c *Client) CreateGetID(ctx context.Context, data *shortlink.Item) (uint64, error) {
-	c.mu.Lock()
+	c.Lock()
+	defer c.Unlock()
 	c.lastKeyID++
 	idKey := strconv.FormatUint(c.lastKeyID, 10)
 	c.storage[idKey] = data
-	c.mu.Unlock()
 	return c.lastKeyID, nil
 }
 
@@ -55,11 +55,11 @@ func (c *Client) Delete(ctx context.Context, key string) error {
 }
 
 func (c *Client) IncVisits(ctx context.Context, key string) error {
-	c.mu.Lock()
+	c.Lock()
+	defer c.Unlock()
 	if item, ok := c.storage[key]; ok {
 		item.Visits++
 	}
-	c.mu.Unlock()
 	return nil
 }
 

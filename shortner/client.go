@@ -92,9 +92,6 @@ func (c *Client) GetLongURL(ctx context.Context, originKey string, t time.Time, 
 	return getUrlByTime(data, t)
 }
 
-func (c *Client) IncKeyVisits(ctx context.Context, key string) error {
-	return c.dbClient.IncVisits(ctx, key)
-}
 
 func (c *Client) GelAllShortLinks(ctx context.Context) ([]*shortlink.Item, error) {
 	return c.dbClient.AsArray(ctx)
